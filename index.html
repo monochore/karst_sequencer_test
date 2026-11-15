@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KARST - Tectonic Sequencer</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&display=swap');
+    :root {
+        --bg: #0c0c0c; --panel: #111111; --border-main: #ffffff; --col-div: rgba(255, 255, 255, 0.25);
+        --c-green: #00ff44; --c-amber: #ff9d00; --c-cyan: #00aaff; --c-red: #ff4444;
+        --text-dim: #bbbbbb;
+    }
+    body { background-color: var(--bg); color: #fff; font-family: 'Oswald', sans-serif; margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; user-select: none; -webkit-user-select: none; overflow-x: hidden; }
+    
+    #chassis { display: flex; flex-direction: row; background-color: var(--panel); border: 2px solid var(--border-main); outline: 2px solid var(--border-main); outline-offset: -8px; padding: 10px; box-shadow: inset 0 0 60px rgba(0,0,0,0.9), 0 20px 50px rgba(0,0,0,0.8); transform-origin: center center; margin-bottom: 10px; }
+    .vertical-text { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-size: 14px; font-weight: 500; letter-spacing: 6px; padding: 0 15px; color: var(--text-dim); display: flex; align-items: center; justify-content: center; }
+    .panel-core { display: flex; border-left: 1px solid var(--col-div); border-right: 1px solid var(--col-div); padding: 15px 0; }
+    
+    .column { width: 155px; display: flex; flex-direction: column; align-items: center; border-right: 1px solid var(--col-div); padding: 0 5px; position: relative; }
+    .column:last-child { border-right: none; }
+    .col-header { font-size: 14px; letter-spacing: 2px; margin-bottom: 20px; text-transform: uppercase; color: var(--text-dim); height: 20px; text-align: center; transition: color 0.3s ease, text-shadow 0.3s ease; }
+    
+    .oled-container { width: 140px; background: #000; border: 1px solid #333; margin-bottom: 15px; display: flex; flex-direction: column; align-items: center; padding: 5px; box-sizing: border-box; box-shadow: inset 0 0 10px rgba(255,255,255,0.05); }
+    #scope { width: 100%; height: 40px; background: #050505; margin-bottom: 6px; border: 1px solid #222; cursor: pointer; }
+    .oled-row { display: flex; width: 100%; justify-content: space-between; margin-bottom: 5px; gap: 2px; }
+    .oled-btn { flex: 1; background: transparent; border: 1px solid #555; color: #fff; font-family: 'Oswald', sans-serif; font-size: 9px; padding: 3px 0; cursor: pointer; text-transform: uppercase; transition: 0.1s; text-align: center; }
+    .oled-btn:hover { background: #333; }
+    .oled-btn.active { background: var(--border-main); color: #000; }
+    
+    #ab-slider::-webkit-slider-thumb { appearance: none; width: 8px; height: 12px; background: #fff; cursor: pointer; }
+    #preset-list { width: 100%; background: #000; color: var(--border-main); border: 1px solid #555; font-family: 'Oswald', sans-serif; font-size: 10px; outline: none; padding: 2px; }
+    
+    .knob-group { display: flex; flex-direction: column; align-items: center; margin-bottom: 15px; width: 100%; }
+    .knob-row { display: flex; justify-content: space-evenly; width: 100%; margin-bottom: 15px; }
+    .knob-container { display: flex; flex-direction: column; align-items: center; position: relative; }
+    .knob-label { font-size: 10px; margin-bottom: 4px; letter-spacing: 1px; text-transform: uppercase; }
+    .knob-svg { width: 40px; height: 40px; cursor: ns-resize; overflow: visible; filter: drop-shadow(0 4px 4px rgba(0,0,0,0.5)); }
+    .knob-bg { fill: #1c1c1c; stroke-width: 2.5px; }
+    .knob-indicator { stroke: #fff; stroke-width: 2.5px; stroke-linecap: round; }
+    
+    .col-strata .knob-bg { stroke: var(--c-green); } .col-strata .knob-label { color: var(--c-green); }
+    .col-abras .knob-bg { stroke: var(--c-amber); } .col-abras .knob-label { color: var(--c-amber); }
+    .col-fault .knob-bg { stroke: var(--c-cyan); }  .col-fault .knob-label { color: var(--c-cyan); }
+    .col-macro .knob-bg { stroke: var(--c-red); }   .col-macro .knob-label { color: var(--c-red); }
+
+    /* OT-INSPIRED SEQUENCER SHELF */
+    #ot-shelf { width: 700px; background-color: var(--panel); border: 2px solid var(--border-main); padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 15px 35px rgba(0,0,0,0.8); }
+    .shelf-row { display: flex; justify-content: space-between; align-items: center; }
+    .shelf-title { font-size: 12px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+    
+    .voice-select-group { display: flex; gap: 5px; }
+    .voice-btn { background: #111; border: 1px solid #555; color: var(--text-dim); font-family: 'Oswald', sans-serif; font-size: 10px; padding: 4px 10px; cursor: pointer; text-transform: uppercase; }
+    .voice-btn.active { background: var(--c-green); border-color: var(--c-green); color: #000; font-weight: bold; }
+
+    .step-grid { display: flex; gap: 4px; width: 100%; justify-content: space-between; }
+    .step-pad { flex: 1; height: 35px; background: #161616; border: 1px solid #444; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; transition: 0.1s; }
+    .step-pad:hover { background: #262626; border-color: #888; }
+    .step-pad.active { background: #222; border-color: var(--c-green); }
+    .step-pad.current { border-color: #fff; box-shadow: 0 0 8px #fff; }
+    .step-pad.selected { background: var(--c-red) !important; border-color: #fff !important; }
+    .plock-dot { width: 4px; height: 4px; background: var(--c-amber); border-radius: 50%; position: absolute; bottom: 3px; display: none; }
+    .step-pad.has-plock .plock-dot { display: block; }
+    .step-num { font-size: 8px; color: #666; }
+
+    /* ASCII LITHIC LANDSCAPE */
+    #ascii-canvas { width: 100%; height: 50px; background: #000; border: 1px solid #333; font-family: monospace; font-size: 11px; color: var(--c-green); line-height: 11px; white-space: pre; overflow: hidden; text-align: center; display: flex; align-items: center; justify-content: center; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div id="chassis">
+    <div class="vertical-text">KARST</div>
+    <div class="panel-core">
+        
+        <!-- COLUMN 1: I. STRATA -->
+        <div class="column col-strata" data-col="strata">
+            <div class="col-header" id="hdr-strata">I. STRATA</div>
+            <div class="oled-container">
+                <canvas id="scope" title="Click to toggle Seismograph"></canvas>
+                <div class="oled-row">
+                    <button class="oled-btn" id="btn-activate">ACTIVATE</button>
+                    <button class="oled-btn" id="btn-scatter">SCATTER</button>
+                </div>
+                <div class="oled-row">
+                    <button class="oled-btn" id="btn-dump">DUMP</button>
+                    <button class="oled-btn" id="btn-rec">REC</button>
+                    <button class="oled-btn" id="btn-drift">DRIFT</button>
+                </div>
+                <div class="oled-row" style="margin-bottom: 5px;">
+                    <div style="display:flex; flex: 1; align-items:center; justify-content:center; background:#111; border:1px solid #333; padding:0 2px;">
+                        <button class="oled-btn" id="btn-a" style="border:none; padding:2px; min-width:15px; color:#aaa;">A</button>
+                        <input type="range" id="ab-slider" min="0" max="1" step="0.001" value="0" style="width: 50px; flex: none; margin: 0 10px; height: 2px; -webkit-appearance: none; background: #555; outline: none;">
+                        <button class="oled-btn" id="btn-b" style="border:none; padding:2px; min-width:15px; color:#aaa;">B</button>
+                    </div>
+                </div>
+                <select id="preset-list" style="margin-bottom: 5px;"><option value="init">INITIALIZED</option></select>
+                <div class="oled-row">
+                    <button class="oled-btn" id="btn-mic">MIC</button>
+                    <button class="oled-btn" id="btn-file">FILE</button>
+                    <input type="file" id="file-upload" accept="audio/*" style="display:none;">
+                </div>
+            </div>
+            <div class="knob-group"><div class="knob-container"><div class="knob-label">STRATA</div><svg class="knob-svg" id="strata" data-val="0.5" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div></div>
+        </div>
+
+        <!-- COLUMN 2: II. ABRASION -->
+        <div class="column col-abras" data-col="abras">
+            <div class="col-header" id="hdr-abras">II. ABRASION</div>
+            <div class="knob-group" style="margin-top: 15px;"><div class="knob-container"><div class="knob-label">TENSION</div><svg class="knob-svg" id="tension" data-val="0.5" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div></div>
+            <div class="knob-row" style="margin-top: 25px;">
+                <div class="knob-container"><div class="knob-label">GRAIN</div><svg class="knob-svg" id="grain" data-val="0.5" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div>
+                <div class="knob-container"><div class="knob-label">FISSURE</div><svg class="knob-svg" id="fissure" data-val="0" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div>
+            </div>
+        </div>
+
+        <!-- COLUMN 3: III. FAULT -->
+        <div class="column col-fault" data-col="fault">
+            <div class="col-header" id="hdr-fault">III. FAULT</div>
+            <div class="knob-group" style="margin-top: 15px;"><div class="knob-container"><div class="knob-label">DECAY</div><svg class="knob-svg" id="decay" data-val="0.5" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div></div>
+            <div class="knob-row" style="margin-top: 10px;">
+                <div class="knob-container"><div class="knob-label">FOLD</div><svg class="knob-svg" id="fold" data-val="0" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div>
+                <div class="knob-container"><div class="knob-label">CRUSH</div><svg class="knob-svg" id="crush" data-val="0" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div>
+            </div>
+            <div class="knob-group" style="margin-top: 10px;"><div class="knob-container"><div class="knob-label">SHIFT</div><svg class="knob-svg" id="shift" data-val="0" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div></div>
+        </div>
+
+        <!-- COLUMN 4: IV. MACROS -->
+        <div class="column col-macro" data-col="macro">
+            <div class="col-header" id="hdr-macro">IV. MACROS</div>
+            <div class="knob-group" style="margin-top: 15px;"><div class="knob-container"><div class="knob-label">ABYSS</div><svg class="knob-svg" id="abyss" data-val="0" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div></div>
+            <div class="knob-row" style="margin-top: 25px;">
+                <div class="knob-container"><div class="knob-label">ERODE</div><svg class="knob-svg" id="erode" data-val="0" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div>
+                <div class="knob-container"><div class="knob-label">SEAM</div><svg class="knob-svg" id="seam" data-val="0.5" viewBox="0 0 44 44"><circle class="knob-bg" cx="22" cy="22" r="18"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg></div>
+            </div>
+        </div>
+    </div>
+    <div class="vertical-text">STRATIGRAPHIC ENGINE</div>
+</div>
+
+<!-- OT-INSPIRED SEQUENCER SHELF -->
+<div id="ot-shelf">
+    <div class="shelf-row">
+        <div class="shelf-title">TECTONIC STEP MATRIX (16 STEPS)</div>
+        <div class="voice-select-group">
+            <button class="voice-btn active" data-voice="0">V1</button>
+            <button class="voice-btn" data-voice="1">V2</button>
+            <button class="voice-btn" data-voice="2">V3</button>
+            <button class="voice-btn" data-voice="3">V4</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <span class="shelf-title" style="font-size:9px;">DRAG / SLEW</span>
+            <svg class="knob-svg" id="seq-slew" data-val="0" viewBox="0 0 44 44" style="width:30px;height:30px;"><circle class="knob-bg" cx="22" cy="22" r="18" style="stroke:var(--c-amber);"></circle><line class="knob-indicator" x1="22" y1="22" x2="22" y2="8"></line></svg>
+        </div>
+    </div>
+    <div class="step-grid" id="step-grid"></div>
+    <div id="ascii-canvas"></div>
+</div>
+
+<script>
+function fitToScreen() {
+    const chassis = document.getElementById('chassis');
+    const shelf = document.getElementById('ot-shelf');
+    chassis.style.transform = 'none'; shelf.style.transform = 'none';
+    const rect = chassis.getBoundingClientRect();
+    const padding = 20; 
+    const scaleX = window.innerWidth / (rect.width + padding);
+    const scaleY = window.innerHeight / (rect.height + padding + shelf.offsetHeight);
+    const scale = Math.min(1, scaleX, scaleY); 
+    chassis.style.transform = `scale(${scale})`;
+    shelf.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', fitToScreen);
+setTimeout(fitToScreen, 50);
+
+const workletString = `
+class SafeDelay {
+    constructor(size) { this.size = size; this.buf = new Float32Array(size); this.writeIdx = 0; }
+    write(val) { if(isNaN(val)) val = 0; this.buf[this.writeIdx] = val; this.writeIdx = (this.writeIdx + 1) % this.size; }
+    read(sAgo, interp = "spline") {
+        if(isNaN(sAgo)) sAgo = 0; sAgo = Math.max(0, Math.min(sAgo, this.size - 2)); 
+        let rPos = this.writeIdx - sAgo; while(rPos < 0) rPos += this.size;
+        let i1 = Math.floor(rPos); let i2 = (i1 + 1) % this.size; let frac = rPos - i1;
+        let val = this.buf[i1] + frac * (this.buf[i2] - this.buf[i1]);
+        return isNaN(val) ? 0 : val;
+    }
+}
+
+class KarstProcessor extends AudioWorkletProcessor {
+    constructor() {
+        super();
+        this.p = { strata: 0.5, tension: 0.5, grain: 0.5, fissure: 0, decay: 0.5, fold: 0, crush: 0, shift: 0, abyss: 0, erode: 0, seam: 0.5 };
+        this.port.onmessage = e => { if (e.data.id && this.p[e.data.id] !== undefined) this.p[e.data.id] = e.data.value; };
+        
+        this.delayL = new SafeDelay(88200); this.delayR = new SafeDelay(88200);
+        this.lpf_y = 0; this.dc_x = 0; this.dc_y = 0;
+        this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.ph4 = 0;
+        this.TWOPI = Math.PI * 2;
+    }
+    slide(t, c, u, d) { if(isNaN(c)) c=0; let diff=t-c; return (diff>0?c+diff/Math.max(1,u):c+diff/Math.max(1,d)); }
+    noise() { return Math.random()*2-1; }
+    scale(v, inMin, inMax, outMin, outMax) { return outMin + (v - inMin) / (inMax - inMin) * (outMax - outMin); }
+
+    process(ins, outs) {
+        const input = ins[0][0]; const outL = outs[0][0]; const outR = outs[0][1];
+        if (!outL || !outR) return true;
+        const sr = sampleRate;
+
+        for (let i = 0; i < outL.length; i++) {
+            let in1 = input ? input[i] : 0;
+            if(isNaN(in1)) in1 = 0;
+
+            let strata = this.p.strata;
+            let tension = this.p.tension;
+            let grain = this.p.grain;
+            let fissure = this.p.fissure;
+            let decay = this.p.decay;
+            let fold = this.p.fold;
+            let crush = this.p.crush;
+            let shift = this.p.shift;
+            let abyss = this.p.abyss;
+            let erode = this.p.erode;
+            let seam = this.p.seam;
+
+            let base_freq = 55.0 * Math.pow(4.0, strata);
+            this.ph1 = (this.ph1 + base_freq / sr) % 1.0;
+            this.ph2 = (this.ph2 + (base_freq * 1.5) / sr) % 1.0;
+            this.ph3 = (this.ph3 + (base_freq * 2.0) / sr) % 1.0;
+            this.ph4 = (this.ph4 + (base_freq * 3.0) / sr) % 1.0;
+
+            let osc = Math.sin(this.ph1 * this.TWOPI) + Math.sin(this.ph2 * this.TWOPI) * 0.5 +
+                      Math.sin(this.ph3 * this.TWOPI) * 0.25 + Math.sin(this.ph4 * this.TWOPI) * 0.125;
+            
+            let folded = Math.sin(osc * (1.0 + fold * 8.0));
+            let crushed = Math.round(folded * (1.0 + crush * 15.0)) / (1.0 + crush * 15.0);
+            let core_sig = in1 * (1.0 - erode) + crushed * erode;
+
+            let d_time = this.scale(decay, 0.0, 1.0, 441.0, 44100.0);
+            this.delayL.write(core_sig + this.delayL.read(d_time) * (0.1 + tension * 0.8));
+            this.delayR.write(core_sig + this.delayR.read(d_time * (1.0 + shift)) * (0.1 + tension * 0.8));
+
+            let wetL = this.delayL.read(d_time);
+            let wetR = this.delayR.read(d_time);
+
+            let finalL = in1 * (1.0 - abyss) + wetL * abyss;
+            let finalR = in1 * (1.0 - abyss) + wetR * abyss;
+
+            outL[i] = isNaN(finalL) ? 0 : finalL;
+            outR[i] = isNaN(finalR) ? 0 : finalR;
+        }
+        return true;
+    }
+}
+registerProcessor('karst-node', KarstProcessor);
+`;
+
+let audioCtx, karstNode, analyzer, scopeData, recNode; let isPlaying = false; 
+let presets = JSON.parse(localStorage.getItem('karst_presets_v1')) || {};
+const canvas = document.getElementById('scope'); const ctx = canvas.getContext('2d'); canvas.width = 140; canvas.height = 40;
+
+let scopeMode = 0; let seismoHistory = new Array(canvas.width).fill(0);
+canvas.addEventListener('click', () => { scopeMode = 1 - scopeMode; });
+
+function drawScope() {
+    requestAnimationFrame(drawScope); ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!analyzer || !isPlaying) return;
+    analyzer.getByteTimeDomainData(scopeData); 
+    if (scopeMode === 0) {
+        ctx.lineWidth = 1.5; ctx.strokeStyle = '#00ff44'; ctx.beginPath();
+        let sliceWidth = canvas.width * 1.0 / scopeData.length; let x = 0;
+        for(let i = 0; i < scopeData.length; i++) { let v = scopeData[i] / 128.0; let y = v * canvas.height / 2; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); x += sliceWidth; }
+        ctx.lineTo(canvas.width, canvas.height/2); ctx.stroke();
+    } else {
+        let peak = 0; for(let i=0; i<scopeData.length; i++) { let v = Math.abs(scopeData[i] - 128) / 128.0; if(v > peak) peak = v; }
+        seismoHistory.shift(); seismoHistory.push(peak); ctx.fillStyle = '#ff4444';
+        for(let x=0; x<canvas.width; x++) { let h = seismoHistory[x] * canvas.height; ctx.fillRect(x, canvas.height - h, 1, h); }
+    }
+}
+drawScope();
+
+function setKnobValue(knob, val) { 
+    val = Math.max(0, Math.min(1, val)); 
+    knob.dataset.val = val; 
+    let angle = -135 + (val * 270); 
+    knob.querySelector('.knob-indicator').setAttribute('transform', `rotate(${angle}, 22, 22)`); 
+    
+    if (knob.id !== 'seq-slew') {
+        sendParam(knob.id, val); 
+        updateColumnGlow(knob);
+        
+        // If a step is currently selected, write parameter lock!
+        if (selectedStep !== null) {
+            sequenceData[activeVoice][selectedStep].pLocks[knob.id] = val;
+            updateStepPadUI(selectedStep);
+        }
+    }
+}
+
+function sendParam(id, val) { if (karstNode) karstNode.port.postMessage({ id: id, value: val }); }
+function syncAllParams() { document.querySelectorAll('.knob-svg').forEach(knob => { if(knob.id !== 'seq-slew') { sendParam(knob.id, parseFloat(knob.dataset.val)); updateColumnGlow(knob); } }); }
+
+function updateColumnGlow(knob) {
+    const col = knob.closest('.column');
+    if (!col) return;
+    const colId = col.dataset.col;
+    const header = col.querySelector('.col-header');
+    if (!header) return;
+    
+    const knobsInCol = col.querySelectorAll('.knob-svg');
+    let sum = 0;
+    knobsInCol.forEach(k => sum += parseFloat(k.dataset.val));
+    let avg = knobsInCol.length > 0 ? sum / knobsInCol.length : 0;
+    
+    let rgb = '187, 187, 187';
+    if (colId === 'strata') rgb = '0, 255, 68';
+    else if (colId === 'abras') rgb = '255, 157, 0';
+    else if (colId === 'fault') rgb = '0, 170, 255';
+    else if (colId === 'macro') rgb = '255, 68, 68';
+    
+    if (avg < 0.05) {
+        header.style.color = 'var(--text-dim)';
+        header.style.textShadow = 'none';
+    } else {
+        header.style.color = `rgba(${rgb}, ${0.5 + avg * 0.5})`;
+        header.style.textShadow = `0 0 ${avg * 8}px rgba(${rgb}, ${avg * 0.8}), 0 0 ${avg * 16}px rgba(${rgb}, ${avg * 0.4})`;
+    }
+}
+
+async function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+    const blob = new Blob([workletString], { type: 'application/javascript' });
+    await audioCtx.audioWorklet.addModule(URL.createObjectURL(blob));
+    karstNode = new AudioWorkletNode(audioCtx, 'karst-node', { outputChannelCount: [2] });
+    
+    analyzer = audioCtx.createAnalyser(); analyzer.fftSize = 512; scopeData = new Uint8Array(analyzer.frequencyBinCount);
+    karstNode.connect(analyzer); analyzer.connect(audioCtx.destination);
+    
+    isPlaying = true; document.getElementById('btn-activate').classList.add('active'); syncAllParams();
+    startSequencer();
+}
+
+document.querySelectorAll('.knob-svg').forEach(knob => {
+    let isDragging = false, startY, startVal; 
+    setKnobValue(knob, parseFloat(knob.dataset.val));
+    knob.addEventListener('pointerdown', e => { isDragging = true; startY = e.clientY; startVal = parseFloat(knob.dataset.val); knob.setPointerCapture(e.pointerId); e.preventDefault(); });
+    window.addEventListener('pointermove', e => { if(!isDragging) return; let delta = (startY - e.clientY) * 0.005; setKnobValue(knob, startVal + delta); });
+    window.addEventListener('pointerup', e => { if(isDragging) { isDragging = false; try{knob.releasePointerCapture(e.pointerId);}catch(err){} } });
+});
+
+document.getElementById('btn-activate').addEventListener('click', (e) => {
+    if (!audioCtx) { initAudio(); } else if (audioCtx.state === 'running') { audioCtx.suspend(); isPlaying = false; e.target.classList.remove('active'); } else { audioCtx.resume(); isPlaying = true; e.target.classList.add('active'); }
+});
+document.getElementById('btn-scatter').addEventListener('click', () => { document.querySelectorAll('.knob-svg').forEach(knob => { if(knob.id !== 'seq-slew') setKnobValue(knob, Math.random()); }); });
+
+let isDrifting = false;
+document.getElementById('btn-drift').addEventListener('click', (e) => { isDrifting = !isDrifting; e.target.classList.toggle('active', isDrifting); });
+setInterval(() => { if(!isDrifting || !isPlaying) return; document.querySelectorAll('.knob-svg').forEach(knob => { if(knob.id !== 'seq-slew') { let v = parseFloat(knob.dataset.val) + (Math.random() - 0.5) * 0.002; setKnobValue(knob, v); } }); }, 50);
+
+// --- OT-INSPIRED SEQUENCER LOGIC ---
+const NUM_STEPS = 16;
+let activeVoice = 0;
+let selectedStep = null;
+let currentStepPlay = 0;
+
+// 4 Voices, each with 16 steps
+let sequenceData = [];
+for (let v = 0; v < 4; v++) {
+    let steps = [];
+    for (let s = 0; s < NUM_STEPS; s++) {
+        steps.push({ active: s % 4 === 0, pLocks: {} });
+    }
+    sequenceData.push(steps);
+}
+
+const stepGridEl = document.getElementById('step-grid');
+function buildStepGrid() {
+    stepGridEl.innerHTML = '';
+    for (let s = 0; s < NUM_STEPS; s++) {
+        let pad = document.createElement('div');
+        pad.className = 'step-pad';
+        if (sequenceData[activeVoice][s].active) pad.classList.add('active');
+        if (Object.keys(sequenceData[activeVoice][s].pLocks).length > 0) pad.classList.add('has-plock');
+        
+        pad.innerHTML = `<span class="step-num">${s+1}</span><div class="plock-dot"></div>`;
+        
+        pad.addEventListener('click', () => {
+            let stepObj = sequenceData[activeVoice][s];
+            if (selectedStep === s) {
+                // Deselect
+                selectedStep = null;
+                pad.classList.remove('selected');
+            } else {
+                // Select and toggle active state if empty, or toggle selection
+                if (selectedStep !== null) {
+                    document.querySelectorAll('.step-pad')[selectedStep].classList.remove('selected');
+                }
+                selectedStep = s;
+                pad.classList.add('selected');
+                stepObj.active = !stepObj.active;
+                pad.classList.toggle('active', stepObj.active);
+            }
+            updateAsciiLandscape();
+        });
+        stepGridEl.appendChild(pad);
+    }
+}
+buildStepGrid();
+
+function updateStepPadUI(s) {
+    const pads = document.querySelectorAll('.step-pad');
+    if(pads[s]) {
+        let stepObj = sequenceData[activeVoice][s];
+        pads[s].classList.toggle('has-plock', Object.keys(stepObj.pLocks).length > 0);
+    }
+}
+
+document.querySelectorAll('.voice-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.voice-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        activeVoice = parseInt(e.target.dataset.voice);
+        selectedStep = null;
+        buildStepGrid();
+    });
+});
+
+function startSequencer() {
+    let bpm = 120;
+    let interval = (60 / bpm) / 4 * 1000; // 16th notes
+    
+    setInterval(() => {
+        if (!isPlaying || !audioCtx) return;
+        
+        // Update visual step playhead
+        const pads = document.querySelectorAll('.step-pad');
+        pads.forEach((p, idx) => {
+            p.classList.toggle('current', idx === currentStepPlay);
+        });
+        
+        // Check active voice steps
+        let step = sequenceData[activeVoice][currentStepPlay];
+        if (step.active) {
+            // Apply parameter locks with slew/drag lag
+            let slewVal = parseFloat(document.getElementById('seq-slew').dataset.val);
+            for (let paramId in step.pLocks) {
+                let targetVal = step.pLocks[paramId];
+                let knobEl = document.getElementById(paramId.toLowerCase()) || document.getElementById(paramId);
+                if (knobEl) {
+                    if (slewVal < 0.05) {
+                        setKnobValue(knobEl, targetVal);
+                    } else {
+                        // Slew interpolation lag
+                        let startVal = parseFloat(knobEl.dataset.val);
+                        let stepsCount = 10;
+                        let curStepCount = 0;
+                        let slewInterval = setInterval(() => {
+                            curStepCount++;
+                            let interp = startVal + (targetVal - startVal) * (curStepCount / stepsCount);
+                            setKnobValue(knobEl, interp);
+                            if(curStepCount >= stepsCount) clearInterval(slewInterval);
+                        }, slewVal * 20);
+                    }
+                }
+            }
+        }
+        
+        currentStepPlay = (currentStepPlay + 1) % NUM_STEPS;
+    }, interval);
+}
+
+// --- ASCII LITHIC LANDSCAPE GENERATOR ---
+const asciiCanvas = document.getElementById('ascii-canvas');
+function updateAsciiLandscape() {
+    // Count total active steps and p-locks across all voices to determine density
+    let activeCount = 0;
+    let plockCount = 0;
+    for(let v=0; v<4; v++) {
+        for(let s=0; s<16; s++) {
+            if(sequenceData[v][s].active) activeCount++;
+            plockCount += Object.keys(sequenceData[v][s].pLocks).length;
+        }
+    }
+    
+    let width = 72;
+    let rows = 4;
+    let chars = activeCount > 8 ? (plockCount > 4 ? "A#MW8&@%*+=-:. " : "x*+=--:. ") : ".,' ";
+    
+    let output = "";
+    for(let r=0; r<rows; r++) {
+        let line = "";
+        for(let c=0; c<width; c++) {
+            // Generative noise-based ASCII shaping
+            let seed = Math.sin(c * 0.2 + r * 1.5 + activeCount * 0.1) * 43758.5453;
+            let rand = seed - Math.floor(seed);
+            let charIdx = Math.floor(rand * chars.length);
+            line += chars[charIdx];
+        }
+        output += line + "\n";
+    }
+    asciiCanvas.textContent = output;
+}
+updateAsciiLandscape();
+setInterval(updateAsciiLandscape, 500);
+</script>
+</body>
+</html>
