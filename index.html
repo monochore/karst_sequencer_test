@@ -49,6 +49,7 @@
     .knob-bg { fill: #1c1c1c; stroke-width: 2.5px; }
     .knob-indicator { stroke: #fff; stroke-width: 2.5px; stroke-linecap: round; }
     .knob-svg.plocked .knob-indicator { stroke: var(--c-red); stroke-width: 3.5px; }
+    .knob-svg.mod-active .knob-indicator { stroke: var(--c-amber); }
     
     .mute-btn { width: 20px; height: 20px; background: #222; border: 1px solid #555; cursor: pointer; margin-top: auto; margin-bottom: 10px; transition: 0.2s; }
     .mute-btn.active { background: #fff; border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.5); }
@@ -158,24 +159,31 @@
     .step-btn.editing { border: 1px solid var(--c-red) !important; box-shadow: 0 0 10px rgba(255,68,68,0.7); background: #280a0a; }
     .step-btn.editing .step-num { color: var(--c-red); font-weight: 600; }
 
-    /* LITHIC ASCII HORIZON */
-    #ascii-bed {
+    /* LITHIC ASCII HORIZON (OPTION 2: CONTINUOUS HORIZONTAL PHOSPHOR GRADIENT) */
+    #ascii-bed-wrap {
         width: 100%;
         height: 54px;
         background: #040404;
         border: 1px solid #222;
-        color: var(--c-green);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    #ascii-bed {
         font-family: 'Courier New', Courier, monospace;
         font-size: 9px;
         line-height: 9px;
         letter-spacing: 0px;
         white-space: pre;
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-shadow: 0 0 5px rgba(0, 255, 68, 0.35);
-        box-sizing: border-box;
+        margin: 0;
+        background-image: linear-gradient(90deg, #00ff44, #00ff44);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        filter: drop-shadow(0 0 4px rgba(0, 255, 68, 0.35));
     }
 </style>
 </head>
@@ -299,7 +307,7 @@
             </div>
             <div class="seq-section">
                 <button class="seq-btn" id="btn-seq-trig" title="When active, 16-step grid triggers voices instead of DIV clocks">SEQ TRIG: OFF</button>
-                <button class="seq-btn" id="btn-lock-mode" title="Click to select steps and lock parameters (or Shift/Right-Click a step)">LOCK</button>
+                <button class="seq-btn" id="btn-lock-mode" title="Click to engage Step Lock editing (or Shift/Right-Click any step)">LOCK</button>
                 <button class="seq-btn" id="btn-page" title="Cycle pattern length (16 / 32 / 64 steps)">LEN: 16</button>
                 <button class="seq-btn" id="btn-view-page" title="Switch active 16-step page view">PG: 1/1</button>
                 <button class="seq-btn" id="btn-clr-locks" title="Clear all parameter locks on active track">CLR</button>
@@ -310,7 +318,7 @@
             </div>
         </div>
         <div class="seq-steps" id="seq-steps"></div>
-        <div id="ascii-bed"></div>
+        <div id="ascii-bed-wrap"><div id="ascii-bed"></div></div>
     </div>
 </div>
 
@@ -382,10 +390,10 @@ class KarstProcessor extends AudioWorkletProcessor {
         const outL=outs[0][0]; const outR=outs[0][1]; if(!outL || !outR) return true;
         const sr=sampleRate; let env1=0, env2=0;
         
-        // DRAG / PORTAMENTO SLEW SCALING (0 = instant/tight, 1 = deep portamento lag)
+        // DRAG / PORTAMENTO SLEW SCALING (0 = instant snap, 1 = deep portamento lag)
         let drag_samples = Math.pow(this.p.seq_drag, 2) * (sr * 0.75);
-        let fast_slew = 100 + drag_samples;
-        let slow_slew = (this.p.seq_drag < 0.02) ? 150 : (4410 + drag_samples);
+        let fast_slew = 64 + drag_samples;
+        let slow_slew = (this.p.seq_drag < 0.02) ? 120 : (3000 + drag_samples);
 
         for (let i = 0; i < outL.length; i++) {
             this.s_strata = this.slide(this.p.strata, this.s_strata, 100, 100); this.s_liquefaction = this.slide(this.p.liquefaction, this.s_liquefaction, fast_slew, fast_slew); this.s_erosion = this.slide(this.p.erosion, this.s_erosion, fast_slew, fast_slew); this.s_bake = this.slide(this.p.bake, this.s_bake, fast_slew, fast_slew); this.s_collapse = this.slide(this.p.collapse, this.s_collapse, fast_slew, fast_slew); this.s_shear = this.slide(this.p.shear, this.s_shear, fast_slew, fast_slew);
@@ -521,7 +529,7 @@ let seismoHistory = new Array(canvas.width).fill(0);
 let liveEnvs = [0, 0, 0, 0];
 canvas.addEventListener('click', () => { scopeMode = (scopeMode + 1) % 3; });
 
-// --- OCTATRACK-INSPIRED SEQUENCER STATE ---
+// --- OCTATRACK-INSPIRED SEQUENCER & BASE KIT STATE ---
 let seqLength = 16;
 let viewPage = 0;
 let activeTrack = 0;
@@ -529,6 +537,12 @@ let lockMode = false;
 let seqTrigMode = false;
 let editingStep = null;
 let currentPlayStep = 0;
+
+// Stores the "Home / Default" state of every dial on the panel
+const baseParams = {};
+document.querySelectorAll('.knob-svg').forEach(k => {
+    baseParams[k.id] = parseFloat(k.dataset.val);
+});
 
 const seqTracks = Array.from({ length: 4 }, (_, v) =>
     Array.from({ length: 64 }, (_, s) => ({
@@ -541,7 +555,7 @@ function drawScope() {
     requestAnimationFrame(drawScope); ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     if (scopeMode === 2) {
-        let strataVal = parseFloat(document.getElementById('strata').dataset.val || 0.5);
+        let strataVal = baseParams['strata'] !== undefined ? baseParams['strata'] : 0.5;
         let bpm = Math.round(strataVal * 3.5 * 60);
         ctx.fillStyle = '#00ff44';
         ctx.font = '600 13px Oswald, sans-serif';
@@ -569,23 +583,49 @@ function drawScope() {
 }
 drawScope();
 
-function setKnobValue(knob, val, fromSequencer = false) {
+// Updates visual dial rotation without overwriting baseParams
+function setKnobVisual(knob, val) {
     val = Math.max(0, Math.min(1, val));
     knob.dataset.val = val;
     let angle = -135 + (val * 270);
     knob.querySelector('.knob-indicator').setAttribute('transform', `rotate(${angle}, 22, 22)`);
-    sendParam(knob.id, val);
+}
 
-    // Write Parameter Lock if a step is currently focused for editing
-    if (!fromSequencer && editingStep !== null && knob.id !== 'seq_drag' && knob.id !== 'strata') {
-        seqTracks[activeTrack][editingStep].locks[knob.id] = val;
-        knob.classList.add('plocked');
-        renderSequencerSteps();
+function setKnobValue(knob, val, mode = 'user') {
+    val = Math.max(0, Math.min(1, val));
+    setKnobVisual(knob, val);
+
+    if (knob.id === 'seq_drag' || knob.id === 'strata') {
+        baseParams[knob.id] = val;
+        sendParam(knob.id, val);
+        return;
+    }
+
+    if (mode === 'user') {
+        if (editingStep !== null) {
+            // Write exclusively to the focused step's Parameter Lock dictionary!
+            seqTracks[activeTrack][editingStep].locks[knob.id] = val;
+            seqTracks[activeTrack][editingStep].trig = true; // Auto-arm trig when locking
+            knob.classList.add('plocked');
+            sendParam(knob.id, val); // Audition lock value live
+            renderSequencerSteps();
+        } else {
+            // Normal Kit Edit: update base state and send to DSP
+            baseParams[knob.id] = val;
+            knob.classList.remove('mod-active');
+            sendParam(knob.id, val);
+        }
+    } else if (mode === 'preset') {
+        baseParams[knob.id] = val;
+        sendParam(knob.id, val);
+    } else if (mode === 'seq') {
+        sendParam(knob.id, val);
     }
 }
+
 function setMuteValue(btn, val) { val = val ? 1 : 0; btn.dataset.val = val; if (val) btn.classList.add('active'); else btn.classList.remove('active'); sendParam(btn.id, val); }
 function sendParam(id, val) { if (karstNode) karstNode.port.postMessage({ id: id, value: val }); }
-function syncAllParams() { document.querySelectorAll('.knob-svg').forEach(knob => { sendParam(knob.id, parseFloat(knob.dataset.val)); }); document.querySelectorAll('.mute-btn').forEach(btn => { sendParam(btn.id, parseFloat(btn.dataset.val)); }); }
+function syncAllParams() { document.querySelectorAll('.knob-svg').forEach(knob => { sendParam(knob.id, baseParams[knob.id]); }); document.querySelectorAll('.mute-btn').forEach(btn => { sendParam(btn.id, parseFloat(btn.dataset.val)); }); }
 
 function updateGlow(id, intensity, r, g, b) {
     const el = document.getElementById(id); if(!el) return; let i = Math.min(1, intensity * 1.2);
@@ -628,7 +668,8 @@ async function initAudio() {
 
 // Pointer Events for Mouse & Touch Screen Compatibility
 document.querySelectorAll('.knob-svg').forEach(knob => {
-    let isDragging = false, startY, startVal; setKnobValue(knob, parseFloat(knob.dataset.val), true);
+    let isDragging = false, startY, startVal;
+    setKnobVisual(knob, baseParams[knob.id]);
     knob.addEventListener('pointerdown', e => {
         isDragging = true; startY = e.clientY; startVal = parseFloat(knob.dataset.val);
         knob.setPointerCapture(e.pointerId); e.preventDefault();
@@ -636,7 +677,7 @@ document.querySelectorAll('.knob-svg').forEach(knob => {
     window.addEventListener('pointermove', e => {
         if(!isDragging) return;
         let delta = (startY - e.clientY) * 0.005;
-        setKnobValue(knob, startVal + delta, false);
+        setKnobValue(knob, startVal + delta, 'user');
     });
     window.addEventListener('pointerup', e => {
         if(isDragging) { isDragging = false; try { knob.releasePointerCapture(e.pointerId); } catch(err){} }
@@ -649,34 +690,36 @@ document.getElementById('btn-activate').addEventListener('click', (e) => {
 });
 document.getElementById('btn-scatter').addEventListener('click', () => {
     document.querySelectorAll('.knob-svg').forEach(knob => {
-        if (knob.id !== 'seq_drag') setKnobValue(knob, Math.random(), false);
+        if (knob.id !== 'seq_drag') setKnobValue(knob, Math.random(), 'user');
     });
 });
 
 let isDrifting = false;
 document.getElementById('btn-drift').addEventListener('click', (e) => { isDrifting = !isDrifting; e.target.classList.toggle('active', isDrifting); });
 setInterval(() => {
-    if(!isDrifting || !isPlaying) return;
+    if(!isDrifting || !isPlaying || editingStep !== null) return;
     document.querySelectorAll('.knob-svg').forEach(knob => {
         if (knob.id !== 'seq_drag') {
-            let v = parseFloat(knob.dataset.val) + (Math.random() - 0.5) * 0.002;
-            setKnobValue(knob, v, true);
+            let v = baseParams[knob.id] + (Math.random() - 0.5) * 0.002;
+            setKnobValue(knob, v, 'preset');
         }
     });
 }, 50);
 
 let stateA = null, stateB = null;
 document.getElementById('btn-a').addEventListener('click', (e) => {
-    stateA = {}; document.querySelectorAll('.knob-svg').forEach(k => stateA[k.id] = parseFloat(k.dataset.val));
+    stateA = { ...baseParams };
     e.target.style.color = '#fff'; document.getElementById('btn-b').style.color = '#aaa'; document.getElementById('ab-slider').value = 0;
 });
 document.getElementById('btn-b').addEventListener('click', (e) => {
-    stateB = {}; document.querySelectorAll('.knob-svg').forEach(k => stateB[k.id] = parseFloat(k.dataset.val));
+    stateB = { ...baseParams };
     e.target.style.color = '#fff'; document.getElementById('btn-a').style.color = '#aaa'; document.getElementById('ab-slider').value = 1;
 });
 document.getElementById('ab-slider').addEventListener('input', (e) => {
     if(!stateA || !stateB) return; let mix = parseFloat(e.target.value);
-    document.querySelectorAll('.knob-svg').forEach(k => { setKnobValue(k, stateA[k.id] * (1 - mix) + stateB[k.id] * mix, true); });
+    document.querySelectorAll('.knob-svg').forEach(k => {
+        if (k.id !== 'seq_drag') setKnobValue(k, stateA[k.id] * (1 - mix) + stateB[k.id] * mix, 'preset');
+    });
 });
 
 document.getElementById('btn-rec').addEventListener('click', (e) => {
@@ -710,30 +753,45 @@ refreshPresetList();
 
 document.getElementById('btn-dump').addEventListener('click', () => {
     let w1 = words1[Math.floor(Math.random() * words1.length)]; let w2 = words2[Math.floor(Math.random() * words2.length)]; let name = w1 + " " + w2;
-    let state = {}; document.querySelectorAll('.knob-svg').forEach(k => { state[k.id] = parseFloat(k.dataset.val); }); document.querySelectorAll('.mute-btn').forEach(b => { state[b.id] = parseFloat(b.dataset.val); });
+    let state = { ...baseParams }; document.querySelectorAll('.mute-btn').forEach(b => { state[b.id] = parseFloat(b.dataset.val); });
     presets[name] = state; localStorage.setItem('karst_presets_v1', JSON.stringify(presets)); refreshPresetList(); document.getElementById('preset-list').value = name;
 });
 
 document.getElementById('preset-list').addEventListener('change', (e) => {
     if(e.target.value === 'init') return; let state = presets[e.target.value];
-    if(state) { for(let key in state) { let el = document.getElementById(key); if(el) { if(el.classList.contains('knob-svg')) setKnobValue(el, state[key], true); else if(el.classList.contains('mute-btn')) setMuteValue(el, state[key]); } } }
+    if(state) { for(let key in state) { let el = document.getElementById(key); if(el) { if(el.classList.contains('knob-svg')) setKnobValue(el, state[key], 'preset'); else if(el.classList.contains('mute-btn')) setMuteValue(el, state[key]); } } }
 });
 
-// --- SEQUENCER UI & ENGINE ---
+// --- SEQUENCER UI & PARAMETER LOCK ENGINE ---
 const stepsContainer = document.getElementById('seq-steps');
 
-function highlightLockedKnobs() {
-    document.querySelectorAll('.knob-svg').forEach(k => k.classList.remove('plocked'));
-    if (editingStep !== null) {
-        const locks = seqTracks[activeTrack][editingStep].locks;
-        for (let kId in locks) {
-            const el = document.getElementById(kId);
-            if (el) {
-                el.classList.add('plocked');
-                setKnobValue(el, locks[kId], true);
+const voiceParamMap = [
+    ['v1_mass', 'v1_matter', 'v1_clock', 'v1_fluid', 'v1_gravity', 'v1_vol'],
+    ['v2_mass', 'v2_matter', 'v2_clock', 'v2_fluid', 'v2_gravity', 'v2_vol'],
+    ['v3_mass', 'v3_matter', 'v3_clock', 'v3_fluid', 'v3_gravity', 'v3_vol'],
+    ['v4_mass', 'v4_matter', 'v4_clock', 'v4_fluid', 'v4_gravity', 'v4_vol']
+];
+const globalLockableParams = ['shear', 'erosion', 'bake', 'liquefaction', 'collapse'];
+
+// Syncs all dials to either the focused step's locks OR back to baseParams
+function syncKnobsToEditState() {
+    document.querySelectorAll('.knob-svg').forEach(k => {
+        if (k.id === 'seq_drag' || k.id === 'strata') return;
+        k.classList.remove('plocked');
+        if (editingStep !== null) {
+            const locks = seqTracks[activeTrack][editingStep].locks;
+            if (locks[k.id] !== undefined) {
+                k.classList.add('plocked');
+                setKnobVisual(k, locks[k.id]);
+            } else {
+                setKnobVisual(k, baseParams[k.id]);
             }
+        } else {
+            // Revert dials visually & sonically to the Base Kit State
+            setKnobVisual(k, baseParams[k.id]);
+            sendParam(k.id, baseParams[k.id]);
         }
-    }
+    });
 }
 
 function renderSequencerSteps() {
@@ -752,10 +810,18 @@ function renderSequencerSteps() {
 
         btn.innerHTML = `<span class="step-num">${stepIdx + 1}</span><div class="step-led"></div><div class="step-plock-ind"></div>`;
 
+        // Right-click directly focuses/unfocuses a step for P-Locking
         btn.addEventListener('contextmenu', e => {
             e.preventDefault();
-            editingStep = (editingStep === stepIdx) ? null : stepIdx;
-            highlightLockedKnobs();
+            if (editingStep === stepIdx) {
+                editingStep = null;
+                lockMode = false;
+            } else {
+                editingStep = stepIdx;
+                lockMode = true;
+            }
+            document.getElementById('btn-lock-mode').classList.toggle('active', lockMode);
+            syncKnobsToEditState();
             renderSequencerSteps();
         });
 
@@ -763,27 +829,23 @@ function renderSequencerSteps() {
             if (lockMode || e.shiftKey) {
                 if (editingStep === stepIdx) {
                     editingStep = null;
+                    if (!lockMode) document.getElementById('btn-lock-mode').classList.remove('active');
                 } else {
                     editingStep = stepIdx;
-                    stepObj.trig = true;
+                    lockMode = true;
+                    document.getElementById('btn-lock-mode').classList.add('active');
                 }
-                highlightLockedKnobs();
+                syncKnobsToEditState();
             } else {
                 stepObj.trig = !stepObj.trig;
-                if (!stepObj.trig && editingStep === stepIdx) {
-                    editingStep = null;
-                    highlightLockedKnobs();
-                }
             }
             renderSequencerSteps();
         });
 
         btn.addEventListener('dblclick', () => {
-            if (lockMode) {
-                stepObj.locks = {};
-                highlightLockedKnobs();
-                renderSequencerSteps();
-            }
+            stepObj.locks = {};
+            syncKnobsToEditState();
+            renderSequencerSteps();
         });
 
         stepsContainer.appendChild(btn);
@@ -796,8 +858,7 @@ document.querySelectorAll('.v-sel').forEach(btn => {
         document.querySelectorAll('.v-sel').forEach(b => b.classList.remove('active'));
         e.target.classList.add('active');
         activeTrack = parseInt(e.target.dataset.v);
-        editingStep = null;
-        highlightLockedKnobs();
+        syncKnobsToEditState();
         renderSequencerSteps();
     });
 });
@@ -805,11 +866,19 @@ document.querySelectorAll('.v-sel').forEach(btn => {
 document.getElementById('btn-lock-mode').addEventListener('click', e => {
     lockMode = !lockMode;
     e.target.classList.toggle('active', lockMode);
-    if (!lockMode) {
+    if (lockMode && editingStep === null) {
+        // Automatically focus the first active step (or step 1) on the current page
+        const offset = viewPage * 16;
+        let firstTrig = offset;
+        for (let i = 0; i < 16; i++) {
+            if (seqTracks[activeTrack][offset + i].trig) { firstTrig = offset + i; break; }
+        }
+        editingStep = firstTrig;
+    } else if (!lockMode) {
         editingStep = null;
-        highlightLockedKnobs();
-        renderSequencerSteps();
     }
+    syncKnobsToEditState();
+    renderSequencerSteps();
 });
 
 document.getElementById('btn-seq-trig').addEventListener('click', e => {
@@ -837,28 +906,61 @@ document.getElementById('btn-view-page').addEventListener('click', e => {
 
 document.getElementById('btn-clr-locks').addEventListener('click', () => {
     for (let s = 0; s < 64; s++) seqTracks[activeTrack][s].locks = {};
-    editingStep = null;
-    highlightLockedKnobs();
+    syncKnobsToEditState();
     renderSequencerSteps();
 });
+
+function applyTargetParam(kId, targetVal, isLocked) {
+    sendParam(kId, targetVal);
+    if (editingStep === null) {
+        const knobEl = document.getElementById(kId);
+        if (knobEl) {
+            setKnobVisual(knobEl, targetVal);
+            knobEl.classList.toggle('mod-active', isLocked);
+        }
+    }
+}
 
 function advanceSequencer() {
     currentPlayStep = (currentPlayStep + 1) % seqLength;
 
+    // 1. Evaluate Voice-Specific Parameter Locks & Reverts
     for (let v = 0; v < 4; v++) {
         const stepObj = seqTracks[v][currentPlayStep];
         if (stepObj.trig) {
             if (seqTrigMode && karstNode) {
                 karstNode.port.postMessage({ type: 'ext_trig', v: v });
             }
-            for (let kId in stepObj.locks) {
-                const knobEl = document.getElementById(kId);
-                if (knobEl && editingStep === null) {
-                    setKnobValue(knobEl, stepObj.locks[kId], true);
+            for (let pId of voiceParamMap[v]) {
+                if (stepObj.locks[pId] !== undefined) {
+                    applyTargetParam(pId, stepObj.locks[pId], true);
                 } else {
-                    sendParam(kId, stepObj.locks[kId]);
+                    applyTargetParam(pId, baseParams[pId], false);
                 }
             }
+        } else {
+            // If step is not triggered in P-Lock-Only mode, revert any locked params back to base kit state
+            if (!seqTrigMode) {
+                for (let pId of voiceParamMap[v]) {
+                    applyTargetParam(pId, baseParams[pId], false);
+                }
+            }
+        }
+    }
+
+    // 2. Evaluate Global Macro Parameter Locks across active tracks on this step
+    for (let gId of globalLockableParams) {
+        let lockedVal = undefined;
+        for (let v = 0; v < 4; v++) {
+            const stepObj = seqTracks[v][currentPlayStep];
+            if (stepObj.trig && stepObj.locks[gId] !== undefined) {
+                lockedVal = stepObj.locks[gId];
+            }
+        }
+        if (lockedVal !== undefined) {
+            applyTargetParam(gId, lockedVal, true);
+        } else {
+            applyTargetParam(gId, baseParams[gId], false);
         }
     }
 
@@ -871,9 +973,57 @@ function advanceSequencer() {
     }
 }
 
-// --- LITHIC ASCII HORIZON ENGINE (Particles -> Boulders) ---
+// --- LITHIC ASCII HORIZON ENGINE (Option 2: 4-Zone CSS Phosphor Gradient + Bake Thermal Bleed) ---
 const asciiBed = document.getElementById('ascii-bed');
 let asciiPhase = 0;
+
+function updateAsciiColorGradient() {
+    const bake = baseParams['bake'] || 0;
+    const baseCols = [
+        [255, 157, 0],   // V1: Amber
+        [170, 170, 170], // V2: Steel
+        [255, 255, 0],   // V3: Lime
+        [0, 170, 255]    // V4: Cyan
+    ];
+
+    const stops = [];
+    for (let v = 0; v < 4; v++) {
+        const pList = voiceParamMap[v];
+        let dialSum = 0;
+        for (let p of pList) dialSum += (baseParams[p] || 0);
+        let dialNorm = dialSum / pList.length; // 0..1 accumulated dial weight
+        let env = Math.min(1, liveEnvs[v] * 1.3);
+
+        // Blend from oxidized phosphor green (0, 180, 60) -> Voice Signature Color based on dial accumulation & envelope
+        let colorWeight = Math.min(1, dialNorm * 1.15 + env * 0.45);
+        let r = 0 * (1 - colorWeight) + baseCols[v][0] * colorWeight;
+        let g = 180 * (1 - colorWeight) + baseCols[v][1] * colorWeight;
+        let b = 60 * (1 - colorWeight) + baseCols[v][2] * colorWeight;
+
+        // BAKE thermal bleed: shifts voice colors toward incandescent Engine Red (255, 68, 68) & hot white cores
+        if (bake > 0.01) {
+            let heat = Math.min(1, bake * 1.1);
+            r = r * (1 - heat) + 255 * heat;
+            g = g * (1 - heat) + (68 + env * 140) * heat;
+            b = b * (1 - heat) + (68 + env * 100) * heat;
+        }
+
+        // Boost brightness on envelope transient
+        let boost = 0.65 + env * 0.55 + dialNorm * 0.25;
+        r = Math.min(255, Math.round(r * boost));
+        g = Math.min(255, Math.round(g * boost));
+        b = Math.min(255, Math.round(b * boost));
+
+        stops.push(`rgb(${r}, ${g}, ${b})`);
+    }
+
+    asciiBed.style.backgroundImage = `linear-gradient(90deg, ${stops[0]} 12%, ${stops[1]} 38%, ${stops[2]} 64%, ${stops[3]} 88%)`;
+    if (bake > 0.25) {
+        asciiBed.style.filter = `drop-shadow(0 0 ${4 + bake * 8}px rgba(255, 68, 68, ${0.35 + bake * 0.45}))`;
+    } else {
+        asciiBed.style.filter = `drop-shadow(0 0 4px rgba(0, 255, 68, 0.35))`;
+    }
+}
 
 function renderAsciiHorizon() {
     let totalTrigs = 0;
@@ -884,6 +1034,8 @@ function renderAsciiHorizon() {
             totalLocks += Object.keys(seqTracks[v][s].locks).length;
         }
     }
+
+    updateAsciiColorGradient();
 
     // Accretion factor: 0.0 (sparse particles) -> 1.0 (dense lithic boulders)
     const density = Math.min(1.0, (totalTrigs * 0.4 + totalLocks * 2.2) / 36.0);
@@ -902,7 +1054,6 @@ function renderAsciiHorizon() {
             let ny = r / (rows - 1);
 
             if (density < 0.15) {
-                // Sparse drifting particulate state
                 let hash = Math.sin((c + Math.floor(asciiPhase * 3)) * 12.9898 + r * 78.233) * 43758.5453;
                 let rand = hash - Math.floor(hash);
                 if (rand > 0.965 - (density * 0.2) - (envEnergy * 0.05)) {
@@ -911,7 +1062,6 @@ function renderAsciiHorizon() {
                     line += " ";
                 }
             } else {
-                // Lithic accretion: 4 boulder clusters tied to the 4 voices
                 let field = 0;
                 for (let b = 0; b < 4; b++) {
                     let bx = 0.14 + b * 0.24 + Math.sin(asciiPhase * 0.3 + b * 2.1) * 0.03;
@@ -925,7 +1075,6 @@ function renderAsciiHorizon() {
                     field = Math.max(field, contrib);
                 }
 
-                // Scatter background particles around the boulders
                 let grit = (Math.sin(c * 19.1 + r * 31.7 + Math.floor(asciiPhase * 2)) * 43758.5453) % 1;
                 if (field > 0.04) {
                     let idx = Math.min(boulderChars.length - 1, Math.floor(field * boulderChars.length));
